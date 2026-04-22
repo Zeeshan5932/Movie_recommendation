@@ -97,13 +97,13 @@ def fetch_movie_details(movie_id):
         return default_details
 
 
-def recommend(movie):
+def recommend(movie, result_count):
     try:
         index = movies[movies['title'] == movie].index[0]
         distances = sorted(list(enumerate(similarity[index])), reverse=True, key=lambda x: x[1])
         recommendations = []
         
-        for i in distances[1:number_of_results + 1]:
+        for i in distances[1:result_count + 1]:
             movie_row = movies.iloc[i[0]]
             movies_id = movie_row['id']
             details = fetch_movie_details(int(movies_id))
@@ -133,6 +133,11 @@ def load_data():
     return movies_data, similarity_data
 
 movies, similarity = load_data()
+
+if "recommendations" not in st.session_state:
+    st.session_state["recommendations"] = []
+if "selected_movie" not in st.session_state:
+    st.session_state["selected_movie"] = ""
 
 # Title with emoji
 st.markdown("<h1>🎬 Movie Recommender System</h1>", unsafe_allow_html=True)
@@ -169,42 +174,52 @@ search_button = st.button('🔎 Get Recommendations', use_container_width=True)
 # Show recommendations
 if search_button:
     with st.spinner('⏳ Finding similar movies...'):
-        recommendations = recommend(selected_movie)
+        recommendations = recommend(selected_movie, number_of_results)
+    st.session_state["recommendations"] = recommendations
+    st.session_state["selected_movie"] = selected_movie
 
-    if len(recommendations) == 0:
-        st.error("❌ Could not find recommendations. Please try another movie.")
-    else:
-        real_posters_count = sum(1 for item in recommendations if item["has_real_poster"])
-        if real_posters_count < len(recommendations):
-            st.info("Some posters could not be loaded from TMDB, so fallback thumbnails are shown.")
+    # Reset old details toggles whenever a new recommendation set is generated.
+    details_keys = [key for key in st.session_state.keys() if key.startswith("details_")]
+    for key in details_keys:
+        st.session_state[key] = False
 
-        st.success(f"✅ Found {len(recommendations)} recommendations for '{selected_movie}'")
-        st.markdown("---")
+recommendations = st.session_state["recommendations"]
+selected_movie_for_results = st.session_state["selected_movie"]
 
-        # Display recommendations in a responsive-style grid
-        for row_start in range(0, len(recommendations), cards_per_row):
-            row_items = recommendations[row_start:row_start + cards_per_row]
-            cols = st.columns(cards_per_row)
+if search_button and len(recommendations) == 0:
+    st.error("❌ Could not find recommendations. Please try another movie.")
+elif len(recommendations) > 0:
+    real_posters_count = sum(1 for item in recommendations if item["has_real_poster"])
+    if real_posters_count < len(recommendations):
+        st.info("Some posters could not be loaded from TMDB, so fallback thumbnails are shown.")
 
-            for col, item in zip(cols, row_items):
-                with col:
-                    st.markdown('<div class="movie-card">', unsafe_allow_html=True)
-                    st.image(item["poster"], use_container_width=True)
-                    st.markdown(f'<div class="movie-title">{item["title"]}</div>', unsafe_allow_html=True)
-                    st.markdown(
-                        f'<div class="movie-meta"><span class="movie-badge">⭐ {item["rating"]}</span><span class="movie-badge">📅 {item["year"]}</span></div>',
-                        unsafe_allow_html=True,
-                    )
+    st.success(f"✅ Found {len(recommendations)} recommendations for '{selected_movie_for_results}'")
+    st.markdown("---")
 
-                    details_key = f'details_{item["movie_id"]}'
-                    if details_key not in st.session_state:
-                        st.session_state[details_key] = False
+    # Display recommendations in a responsive-style grid
+    for row_start in range(0, len(recommendations), cards_per_row):
+        row_items = recommendations[row_start:row_start + cards_per_row]
+        cols = st.columns(cards_per_row)
 
-                    if st.button("Movie Details", key=f"btn_{item['movie_id']}", use_container_width=True):
-                        st.session_state[details_key] = not st.session_state[details_key]
+        for col, item in zip(cols, row_items):
+            with col:
+                st.markdown('<div class="movie-card">', unsafe_allow_html=True)
+                st.image(item["poster"], use_container_width=True)
+                st.markdown(f'<div class="movie-title">{item["title"]}</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="movie-meta"><span class="movie-badge">⭐ {item["rating"]}</span><span class="movie-badge">📅 {item["year"]}</span></div>',
+                    unsafe_allow_html=True,
+                )
 
-                    if st.session_state[details_key]:
-                        st.caption(f"Genres: {item['genres']}")
-                        st.caption(item["overview"])
+                details_key = f'details_{item["movie_id"]}'
+                if details_key not in st.session_state:
+                    st.session_state[details_key] = False
 
-                    st.markdown('</div>', unsafe_allow_html=True)
+                if st.button("Movie Details", key=f"btn_{item['movie_id']}", use_container_width=True):
+                    st.session_state[details_key] = not st.session_state[details_key]
+
+                if st.session_state[details_key]:
+                    st.caption(f"Genres: {item['genres']}")
+                    st.caption(item["overview"])
+
+                st.markdown('</div>', unsafe_allow_html=True)
